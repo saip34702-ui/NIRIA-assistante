@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NIRIA AI</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+<h1>NIRIA AI</h1>
+
+<div class="mic-container">
+    <div class="mic-button" onclick="toggleMic()">
+        🎤
+    </div>
+</div>
+
+<div id="chatbox"></div>
+
+<div style="text-align: center;">
+    <input type="text" id="message" placeholder="Ask NIRIS...">
+    <button onclick="sendMessage()">Send</button>
+    <button onclick="toggleMute()" id="muteBtn">🔊</button>
+</div>
+
+<!-- SETTINGS ICON -->
+<div id="settingsIcon" style="position:fixed; top:20px; right:20px; cursor:pointer; font-size:24px;">
+⚙️
+</div>
+
+<!-- SETTINGS PANEL -->
+<div id="settingsPanel" style="
+position:fixed;
+top:60px;
+right:20px;
+background:white;
+color:black;
+padding:15px;
+border-radius:10px;
+display:none;
+width:220px;
+box-shadow:0 0 10px rgba(0,0,0,0.3);
+z-index:999;
+">
+
+<h3>Settings</h3>
+
+<label>Language:</label>
+<select id="languageSelect">
+    <option value="en-US">English</option>
+    <option value="hi-IN">Hindi</option>
+</select>
+
+<br><br>
+
+<label>Voice Type:</label>
+<select id="voiceType">
+    <option value="female">Female</option>
+    <option value="male">Male</option>
+</select>
+
+<br><br>
+
+<label>Theme:</label>
+<select id="themeSelect">
+    <option value="light">Day Mode</option>
+    <option value="dark">Night Mode</option>
+</select>
+
+</div>
+
+<script>
+
+// =====================
+// GLOBAL VARIABLES
+// =====================
+
+let recognition = null;
+let isListening = false;
+let isMuted = false;
+
+let selectedLang = "en-US";
+let selectedVoiceType = "female";
+
+// =====================
+// ENTER KEY SUPPORT
+// =====================
+
+window.addEventListener("DOMContentLoaded", function() {
+
+    document.getElementById("message").addEventListener("keydown", function(event) {
+        if (event.key === "Enter") {
+            sendMessage();
+        }
+    });
+
+});
+
+// =====================
+// SPEECH RECOGNITION
+// =====================
+
+if ('webkitSpeechRecognition' in window) {
+
+    recognition = new webkitSpeechRecognition();
+    recognition.lang = selectedLang;
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onresult = function(event) {
+        let transcript = event.results[0][0].transcript;
+        document.getElementById("message").value = transcript;
+        sendMessage();
+    };
+
+    recognition.onend = function() {
+        isListening = false;
+        document.querySelector(".mic-button").classList.remove("active");
+    };
+}
+
+// =====================
+// MIC BUTTON
+// =====================
+
+function toggleMic() {
+
+    if (!recognition) {
+        alert("Use Google Chrome for voice recognition.");
+        return;
+    }
+
+    let mic = document.querySelector(".mic-button");
+
+    if (!isListening) {
+        recognition.lang = selectedLang;
+        recognition.start();
+        isListening = true;
+        mic.classList.add("active");
+    } else {
+        recognition.stop();
+        isListening = false;
+        mic.classList.remove("active");
+    }
+}
+
+// =====================
+// TEXT TO SPEECH
+// =====================
+
+function speak(text) {
+
+    if (isMuted) return;
+
+    let speech = new SpeechSynthesisUtterance(text);
+    speech.lang = selectedLang;
+
+    let voices = window.speechSynthesis.getVoices();
+
+    for (let voice of voices) {
+
+        let name = voice.name.toLowerCase();
+
+        if (selectedVoiceType === "female" && name.includes("female")) {
+            speech.voice = voice;
+            break;
+        }
+
+        if (selectedVoiceType === "male" && name.includes("male")) {
+            speech.voice = voice;
+            break;
+        }
+    }
+
+    window.speechSynthesis.speak(speech);
+}
+
+// =====================
+// SEND MESSAGE
+// =====================
+
+function sendMessage() {
+
+    let input = document.getElementById("message");
+    let message = input.value.trim();
+
+    if (message === "") return;
+
+    let chatbox = document.getElementById("chatbox");
+
+    chatbox.innerHTML += `<p><b>You:</b> ${message}</p>`;
+
+    fetch("/ask", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ message: message })
+    })
+    .then(res => res.json())
+    .then(data => {
+
+        if (data.response) {
+            chatbox.innerHTML += `<p><b>NIRIA:</b> ${data.response}</p>`;
+            speak(data.response);
+        } else {
+            chatbox.innerHTML += `<p><b>NIRIA:</b> No response from server</p>`;
+        }
+
+        input.value = "";
+        chatbox.scrollTop = chatbox.scrollHeight;
+    })
+    .catch(error => {
+        chatbox.innerHTML += `<p style="color:red;">Server error</p>`;
+        console.log(error);
+    });
+}
+
+// =====================
+// MUTE TOGGLE
+// =====================
+
+function toggleMute() {
+
+    let btn = document.getElementById("muteBtn");
+
+    if (isMuted) {
+        isMuted = false;
+        btn.innerHTML = "🔊";
+    } else {
+        isMuted = true;
+        window.speechSynthesis.cancel();
+        btn.innerHTML = "🔇";
+    }
+}
+
+// =====================
+// SETTINGS PANEL
+// =====================
+
+let settingsIcon = document.getElementById("settingsIcon");
+let settingsPanel = document.getElementById("settingsPanel");
+
+settingsIcon.onclick = function() {
+    settingsPanel.style.display =
+        settingsPanel.style.display === "block" ? "none" : "block";
+};
+
+document.getElementById("languageSelect").onchange = function() {
+    selectedLang = this.value;
+};
+
+document.getElementById("voiceType").onchange = function() {
+    selectedVoiceType = this.value;
+};
+
+document.getElementById("themeSelect").onchange = function() {
+
+    if (this.value === "dark") {
+        document.body.style.background = "#121212";
+        document.body.style.color = "white";
+    } else {
+        document.body.style.background = "radial-gradient(circle at center, #0f2027, #000000)";
+        document.body.style.color = "#00f7ff";
+    }
+};
+
+</script>
+</body>
+</html>
